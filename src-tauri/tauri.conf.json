@@ -15,7 +15,8 @@
         "title": "Cordova",
         "width": 700,
         "height": 700,
-        "resizable": false
+        "resizable": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
