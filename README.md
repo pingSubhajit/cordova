@@ -2,6 +2,8 @@
 
 A simple desktop application that solves the problem of jumbled page orders created by double-sided document scanners.
 
+[Watch Video](https://screen.studio/share/z2f5smql)
+
 ## Problem Statement
 
 Double-sided document scanners often output pages in a non-sequential order due to their scanning mechanism. This application automatically reorders and renames the scanned pages to their correct sequence.
