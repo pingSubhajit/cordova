@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "bundle:windows": "tauri build --target x86_64-pc-windows-gnu",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit"

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readDir, rename } from "@tauri-apps/plugin-fs";
+import { sep, dirname, basename } from '@tauri-apps/api/path';
 import {ArrowLeft, Loader2} from "lucide-react";
 
 // Define a file entry interface for our app
@@ -177,8 +178,9 @@ function Dashboard(): React.ReactElement {
                 }
                 
                 try {
-                    const folderPath = files[0].path.substring(0, files[0].path.lastIndexOf('/'));
-                    const folderName = folderPath.split('/').pop() || 'image';
+                    // Use platform-agnostic path handling
+                    const folderPath = await dirname(files[0].path);
+                    const folderName = await basename(folderPath);
 
                     let successCount = 0;
                     let errorCount = 0;
@@ -187,8 +189,9 @@ function Dashboard(): React.ReactElement {
                         const file = result[i];
                         const fileExt = file.name.split('.').pop() || '';
                         const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
-                        const dirPath = file.path.substring(0, file.path.lastIndexOf('/'));
-                        const newPath = `${dirPath}/${newName}`;
+                        const dirPath = await dirname(file.path);
+                        const pathSeparator = await sep();
+                        const newPath = `${dirPath}${pathSeparator}${newName}`;
                         
                         try {
                             await rename(file.path, newPath);
