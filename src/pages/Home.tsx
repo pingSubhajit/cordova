@@ -12,28 +12,28 @@ function Home(): React.ReactElement {
 
     return (
         <div className="w-full h-full flex flex-col items-center justify-between pb-3 bg-white">
-            <div className="w-full h-[500px] relative flex flex-col items-center justify-center gap-6 p-16 text-center text-white">
+            <motion.div 
+                className="w-full h-[500px] relative flex flex-col items-center justify-center gap-6 p-16 text-center text-white"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.8 }}
+            >
                 {/* Background Pattern */}
                 <motion.img 
                     src={bg} 
                     alt="Background Pattern" 
-                    className="absolute inset-0 w-full h-full object-cover" 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 1.2 }}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    initial={{ scale: 1.1 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
                 />
                 
                 {/* Logo */}
                 <motion.div 
                     className="z-10"
-                    initial={{ scale: 0, rotate: -180 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ 
-                        type: "spring", 
-                        stiffness: 260, 
-                        damping: 20, 
-                        delay: 0.3 
-                    }}
+                    initial={{ y: -20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
                 >
                     <svg width="65" height="72" viewBox="0 0 67 73" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="60.7991" cy="35.9237" r="5.68066" fill="white"/>
@@ -44,9 +44,9 @@ function Home(): React.ReactElement {
                 {/* Title */}
                 <motion.h1 
                     className="text-6xl font-bold z-10"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.7 }}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.5 }}
                 >
                     Sort, effortlessly
                 </motion.h1>
@@ -54,14 +54,14 @@ function Home(): React.ReactElement {
                 {/* Subtitle */}
                 <motion.p 
                     className="text-xl max-w-96 z-10"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.9 }}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.7 }}
                 >
                     Easily rename, sort and manage scanned documents based on presets
                 </motion.p>
 
-            </div>
+            </motion.div>
 
            {/* Button */}
            <motion.button

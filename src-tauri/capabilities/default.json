@@ -5,6 +5,20 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-read-dir",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-exists",
+    "fs:read-all",
+    "fs:scope-home",
+    "fs:scope-home-recursive",
+    "fs:allow-rename",
+    "fs:allow-home-write",
+    "fs:allow-home-write-recursive",
+    "fs:allow-picture-write",
+    "fs:allow-picture-write-recursive"
   ]
 }
