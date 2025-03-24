@@ -20,17 +20,6 @@ interface DirEntry {
   children?: DirEntry[];
 }
 
-// Helper function to get directory path from a file path
-function getDirectoryPath(filePath: string | undefined): string {
-    if (!filePath) {
-        console.error("getDirectoryPath received undefined path");
-        return "";
-    }
-    const parts = filePath.split(/[/\\]/);
-    parts.pop(); // Remove filename
-    return parts.join('/');
-}
-
 function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
     // Clone the array to avoid modifying the original
     const result = [...arr];
@@ -135,7 +124,12 @@ function Dashboard(): React.ReactElement {
                     if (!entry.name) return false;
                     const ext = entry.name.split('.').pop()?.toLowerCase();
                     return ext === 'jpg' || ext === 'jpeg' || ext === 'png' || 
-                           ext === 'gif' || ext === 'webp' || ext === 'bmp';
+                           ext === 'gif' || ext === 'webp' || ext === 'bmp' ||
+                           ext === 'tif' || ext === 'tiff' || ext === 'svg' ||
+                           ext === 'heif' || ext === 'heic' || ext === 'raw' ||
+                           ext === 'cr2' || ext === 'nef' || ext === 'arw' ||
+                           ext === 'dng' || ext === 'avif' || ext === 'jxr' ||
+                           ext === 'jp2' || ext === 'j2k' || ext === 'psd';
                 });
                 
                 console.log("Image files found:", imageFiles);
@@ -232,43 +226,36 @@ function Dashboard(): React.ReactElement {
                 
                 // Now rename files according to their new order
                 try {
-                    const updatedFiles = [];
+                    // Extract the folder name to use as prefix
+                    const folderPath = files[0].path.substring(0, files[0].path.lastIndexOf('/'));
+                    const folderName = folderPath.split('/').pop() || 'image';
+                    console.log(`Using folder name "${folderName}" as prefix`);
+
+                    let successCount = 0;
+                    let errorCount = 0;
+
                     for (let i = 0; i < result.length; i++) {
                         const file = result[i];
-                        console.log("Processing file for rename:", file);
-                        
-                        if (!file.path) {
-                            console.error(`File at index ${i} has no path:`, file);
-                            continue; // Skip this file
-                        }
-                        
-                        const folderDir = getDirectoryPath(file.path);
-                        const extension = file.name.split('.').pop() || '';
-                        const newName = `image_${(i + 1).toString().padStart(3, '0')}.${extension}`;
-                        const newPath = `${folderDir}/${newName}`;
-                        
-                        console.log(`Renaming ${file.path} to ${newPath}`);
+                        const fileExt = file.name.split('.').pop() || '';
+                        // Use folder name as prefix instead of "image_"
+                        const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
+                        const dirPath = file.path.substring(0, file.path.lastIndexOf('/'));
+                        const newPath = `${dirPath}/${newName}`;
                         
                         try {
-                            // Use rename function for Tauri v2
+                            console.log(`Renaming ${file.path} to ${newPath}`);
                             await rename(file.path, newPath);
-                            
-                            updatedFiles.push({
-                                ...file,
-                                name: newName,
-                                path: newPath
-                            });
-                        } catch (renameErr) {
-                            console.error(`Error renaming file ${file.path}:`, renameErr);
-                            // Still add the original file to the result
-                            updatedFiles.push(file);
+                            successCount++;
+                        } catch (error) {
+                            console.error(`Error renaming file: ${error}`);
+                            errorCount++;
                         }
                     }
                     
                     // Update the files array with the renamed files
-                    setFiles(updatedFiles);
+                    setFiles(result);
                     alert("Files reordered and renamed successfully!");
-                    console.log("Renamed files:", updatedFiles.map(f => f.name));
+                    console.log("Renamed files:", result.map(f => f.name));
                 } catch (renameError) {
                     console.error("Error in rename process:", renameError);
                     alert(`Error in rename process: ${renameError}`);
