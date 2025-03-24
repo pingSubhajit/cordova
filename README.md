@@ -2,7 +2,7 @@
 
 A simple desktop application that solves the problem of jumbled page orders created by double-sided document scanners.
 
-[Watch Video](https://screen.studio/share/z2f5smql)
+[Watch Video](https://screen.studio/share/4aRNpvQB)
 
 ## Problem Statement
 
