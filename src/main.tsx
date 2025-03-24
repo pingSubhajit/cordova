@@ -5,6 +5,7 @@ import "./index.css";
 import App from "./App";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import About from "./pages/About.tsx";
 
 const router = createBrowserRouter([
   {
@@ -19,6 +20,10 @@ const router = createBrowserRouter([
         path: "/dashboard",
         element: <Dashboard />,
       },
+      {
+        path: "/about",
+        element: <About />,
+      }
     ],
   },
 ]);
