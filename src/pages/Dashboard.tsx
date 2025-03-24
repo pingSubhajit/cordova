@@ -31,6 +31,56 @@ function getDirectoryPath(filePath: string | undefined): string {
     return parts.join('/');
 }
 
+function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
+    // Clone the array to avoid modifying the original
+    const result = [...arr];
+
+    return result.sort((a, b) => {
+        // Handle edge cases
+        if (!a.name) return -1;
+        if (!b.name) return 1;
+
+        const nameA = a.name.toString();
+        const nameB = b.name.toString();
+
+        // Split the names into chunks of string and number parts
+        const chunksA = nameA.split(/(\d+)/).filter(Boolean);
+        const chunksB = nameB.split(/(\d+)/).filter(Boolean);
+
+        // Compare each chunk
+        const minLength = Math.min(chunksA.length, chunksB.length);
+
+        for (let i = 0; i < minLength; i++) {
+            const chunkA = chunksA[i];
+            const chunkB = chunksB[i];
+
+            // Check if both chunks are numeric
+            const isNumA = /^\d+$/.test(chunkA);
+            const isNumB = /^\d+$/.test(chunkB);
+
+            if (isNumA && isNumB) {
+                // Compare as numbers
+                const numA = parseInt(chunkA, 10);
+                const numB = parseInt(chunkB, 10);
+
+                if (numA !== numB) {
+                    return numA - numB;
+                }
+            } else {
+                // Compare as strings (case-insensitive)
+                const strCompare = chunkA.localeCompare(chunkB, undefined, {sensitivity: 'base'});
+
+                if (strCompare !== 0) {
+                    return strCompare;
+                }
+            }
+        }
+
+        // If all compared chunks are equal, the shorter name comes first
+        return chunksA.length - chunksB.length;
+    });
+}
+
 function Dashboard(): React.ReactElement {
     const navigate = useNavigate();
     const [files, setFiles] = useState<AppFileEntry[]>([]);
@@ -103,10 +153,10 @@ function Dashboard(): React.ReactElement {
                 });
                 
                 // Sort files by name to ensure consistent ordering
-                processedFiles.sort((a, b) => a.name.localeCompare(b.name));
-                console.log("Sorted files:", processedFiles.map(f => f.name));
+                const sortedFiles = naturalSort(processedFiles);
+                console.log("Sorted files:", sortedFiles.map(f => f.name));
                 
-                setFiles(processedFiles);
+                setFiles(sortedFiles);
                 
             } catch (fsError) {
                 console.error("FS error:", fsError);
@@ -135,26 +185,49 @@ function Dashboard(): React.ReactElement {
                 const filesCopy = [...files];
                 const result = [];
 
-                console.log("Input files (should be sorted by name):", filesCopy.map(f => f.name));
-                
-                // For input [1, 2, 3, 4, 5], we want output [5, 2, 1, 3, 4]
-                
-                // Step 1: Last file (5) goes first
-                const lastIndex = filesCopy.length - 1;
-                result.push(filesCopy[lastIndex]);
-                
-                // Step 2: Take file at index 1 (2)
-                result.push(filesCopy[1]);
-                
-                // Step 3: Take first file (1)
-                result.push(filesCopy[0]);
-                
-                // Step 4: Take files at index 2 and 3 (3, 4)
-                for (let i = 2; i < lastIndex; i++) {
-                    result.push(filesCopy[i]);
+                console.log('Files from the file system:', filesCopy)
+
+                console.log("Input files (sorted by name):", filesCopy.map(f => f.name));
+
+                // Step 1: Add the last element first
+                result.push(filesCopy[filesCopy.length - 1]);
+
+                // Step 2: Apply "skip 2, take 2" pattern going backwards
+                const taken = new Set();
+                taken.add(filesCopy.length - 1); // Mark last element as taken
+
+                // Start from second-to-last element
+                let i = filesCopy.length - 2;
+                let skipCount = 0;
+
+                while (i >= 0) {
+                    if (skipCount < 2) {
+                        // Skip this element
+                        skipCount++;
+                    } else {
+                        // Take 2 elements
+                        let takeCount = 0;
+                        while (takeCount < 2 && i >= 0) {
+                            result.push(filesCopy[i]);
+                            taken.add(i);
+                            takeCount++;
+                            i--;
+                        }
+                        // Reset skip counter
+                        skipCount = 0;
+                        continue;
+                    }
+                    i--;
+                }
+
+                // Step 3: Add skipped elements in original order
+                for (let i = 0; i < filesCopy.length; i++) {
+                    if (!taken.has(i)) {
+                        result.push(filesCopy[i]);
+                    }
                 }
                 
-                console.log("Original file order:", filesCopy.map(f => f.name));
+                console.log("Original files:", filesCopy.map(f => f.name));
                 console.log("Reordered files:", result.map(f => f.name));
                 
                 // Now rename files according to their new order
