@@ -16,7 +16,7 @@ function Home(): React.ReactElement {
                 className="w-full h-[500px] relative flex flex-col items-center justify-center gap-6 p-16 text-center text-white"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.8 }}
+                transition={{ duration: 0.4 }}
             >
                 {/* Background Pattern */}
                 <motion.img 
@@ -25,7 +25,7 @@ function Home(): React.ReactElement {
                     className="absolute inset-0 w-full h-full object-cover"
                     initial={{ scale: 1.1 }}
                     animate={{ scale: 1 }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
                 />
                 
                 {/* Logo */}
@@ -33,7 +33,7 @@ function Home(): React.ReactElement {
                     className="z-10"
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.3 }}
+                    transition={{ duration: 0.3, delay: 0.1 }}
                 >
                     <svg width="65" height="72" viewBox="0 0 67 73" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="60.7991" cy="35.9237" r="5.68066" fill="white"/>
@@ -46,7 +46,7 @@ function Home(): React.ReactElement {
                     className="text-6xl font-bold z-10"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.5 }}
+                    transition={{ duration: 0.3, delay: 0.2 }}
                 >
                     Sort, effortlessly
                 </motion.h1>
@@ -56,7 +56,7 @@ function Home(): React.ReactElement {
                     className="text-xl max-w-96 z-10"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.7 }}
+                    transition={{ duration: 0.3, delay: 0.3 }}
                 >
                     Easily rename, sort and manage scanned documents based on presets
                 </motion.p>
@@ -69,7 +69,7 @@ function Home(): React.ReactElement {
                className="bg-peacock text-white font-medium py-3 px-16 rounded-xl hover:bg-peacock/90 transition"
                initial={{ opacity: 0, y: 20 }}
                animate={{ opacity: 1, y: 0 }}
-               transition={{ duration: 0.6, delay: 1.1 }}
+               transition={{ duration: 0.3, delay: 0.4 }}
                whileHover={{ scale: 1.05 }}
                whileTap={{ scale: 0.95 }}
            >
@@ -81,9 +81,9 @@ function Home(): React.ReactElement {
                className="text-xs text-neutral-950 opacity-80 font-medium"
                initial={{ opacity: 0 }}
                animate={{ opacity: 0.8 }}
-               transition={{ duration: 0.8, delay: 1.3 }}
+               transition={{ duration: 0.4, delay: 0.5 }}
            >
-               A product by Subhajit Kundu
+               A product by <span className="font-semibold opacity-100">Subhajit Kundu</span>
            </motion.div>
         </div>
     );

@@ -20,34 +20,28 @@ interface DirEntry {
 }
 
 function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
-    // Clone the array to avoid modifying the original
     const result = [...arr];
 
     return result.sort((a, b) => {
-        // Handle edge cases
         if (!a.name) return -1;
         if (!b.name) return 1;
 
         const nameA = a.name.toString();
         const nameB = b.name.toString();
 
-        // Split the names into chunks of string and number parts
         const chunksA = nameA.split(/(\d+)/).filter(Boolean);
         const chunksB = nameB.split(/(\d+)/).filter(Boolean);
 
-        // Compare each chunk
         const minLength = Math.min(chunksA.length, chunksB.length);
 
         for (let i = 0; i < minLength; i++) {
             const chunkA = chunksA[i];
             const chunkB = chunksB[i];
 
-            // Check if both chunks are numeric
             const isNumA = /^\d+$/.test(chunkA);
             const isNumB = /^\d+$/.test(chunkB);
 
             if (isNumA && isNumB) {
-                // Compare as numbers
                 const numA = parseInt(chunkA, 10);
                 const numB = parseInt(chunkB, 10);
 
@@ -55,7 +49,6 @@ function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
                     return numA - numB;
                 }
             } else {
-                // Compare as strings (case-insensitive)
                 const strCompare = chunkA.localeCompare(chunkB, undefined, {sensitivity: 'base'});
 
                 if (strCompare !== 0) {
@@ -64,7 +57,6 @@ function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
             }
         }
 
-        // If all compared chunks are equal, the shorter name comes first
         return chunksA.length - chunksB.length;
     });
 }
@@ -76,72 +68,51 @@ function Dashboard(): React.ReactElement {
     // Function to select folder using Tauri dialog
     const selectFolder = async () => {
         try {
-            console.log("Opening folder dialog...");
             setIsProcessing(true);
 
-            // Open folder selection dialog
             const selected = await open({
                 directory: true,
                 multiple: false,
                 title: "Select Image Folder"
             });
             
-            console.log("Dialog result:", selected);
-            
-            if (selected === null) {
-                // User cancelled the selection
-                console.log("Selection cancelled");
+            if (!selected) {
                 setIsProcessing(false);
                 return;
             }
             
             const folderPath = selected as string;
-            console.log("Selected folder path:", folderPath);
             
-            console.log("Reading directory contents...");
             try {
-                // Read directory contents using Tauri FS API
                 const entries = await readDir(folderPath);
-                console.log("Directory entries:", JSON.stringify(entries, null, 2));
                 
-                // Log the type and properties of the first entry if available
-                if (entries.length > 0) {
-                    const firstEntry = entries[0];
-                    console.log("First entry type:", typeof firstEntry);
-                    console.log("First entry keys:", Object.keys(firstEntry));
-                    console.log("First entry:", firstEntry);
-                }
-                
-                // Filter for image files - treat entries as our DirEntry type
+                // Filter for image files
                 const imageFiles = (entries as unknown as DirEntry[]).filter(entry => {
                     if (!entry.name) return false;
                     const ext = entry.name.split('.').pop()?.toLowerCase();
-                    return ext === 'jpg' || ext === 'jpeg' || ext === 'png' || 
-                           ext === 'gif' || ext === 'webp' || ext === 'bmp' ||
-                           ext === 'tif' || ext === 'tiff' || ext === 'svg' ||
-                           ext === 'heif' || ext === 'heic' || ext === 'raw' ||
-                           ext === 'cr2' || ext === 'nef' || ext === 'arw' ||
-                           ext === 'dng' || ext === 'avif' || ext === 'jxr' ||
-                           ext === 'jp2' || ext === 'j2k' || ext === 'psd';
+                    return [
+                        'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+                        'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
+                        'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
+                        'jp2', 'j2k', 'psd'
+                    ].includes(ext || '');
                 });
                 
-                console.log("Image files found:", imageFiles);
+                if (imageFiles.length === 0) {
+                    alert("No supported image files found in the selected folder.");
+                    setIsProcessing(false);
+                    return;
+                }
                 
-                // Create file objects with name, path and size
-                const processedFiles = imageFiles.map(entry => {
-                    console.log("Processing entry:", entry);
-                    // Construct the full path by joining the folder path with the file name
-                    const fullPath = `${folderPath}/${entry.name}`;
-                    return {
-                        name: entry.name || "unknown",
-                        path: fullPath, // Use the constructed full path
-                        size: 0 // We don't have size, so default to 0
-                    };
-                });
+                // Create file objects with name and path
+                const processedFiles = imageFiles.map(entry => ({
+                    name: entry.name || "unknown",
+                    path: `${folderPath}/${entry.name}`,
+                    size: 0
+                }));
                 
                 // Sort files by name to ensure consistent ordering
                 const sortedFiles = naturalSort(processedFiles);
-                console.log("Sorted files:", sortedFiles.map(f => f.name));
 
                 // Process files immediately after selection
                 setTimeout(() => {
@@ -149,12 +120,11 @@ function Dashboard(): React.ReactElement {
                 }, 1000);
                 
             } catch (fsError) {
-                console.error("FS error:", fsError);
                 alert(`Error reading directory: ${fsError}`);
+                setIsProcessing(false);
             }
             
         } catch (error) {
-            console.error("Error selecting folder:", error);
             alert(`Error selecting folder: ${error}`);
             setIsProcessing(false);
         }
@@ -168,33 +138,24 @@ function Dashboard(): React.ReactElement {
         }
         
         try {
-            // Implementation of the reordering algorithm from the requirements
             if (files.length > 0) {
-                // Create a copy of files arrays to work with
                 const filesCopy = [...files];
                 const result = [];
-
-                console.log('Files from the file system:', filesCopy)
-
-                console.log("Input files (sorted by name):", filesCopy.map(f => f.name));
 
                 // Step 1: Add the last element first
                 result.push(filesCopy[filesCopy.length - 1]);
 
                 // Step 2: Apply "skip 2, take 2" pattern going backwards
                 const taken = new Set();
-                taken.add(filesCopy.length - 1); // Mark last element as taken
+                taken.add(filesCopy.length - 1);
 
-                // Start from second-to-last element
                 let i = filesCopy.length - 2;
                 let skipCount = 0;
 
                 while (i >= 0) {
                     if (skipCount < 2) {
-                        // Skip this element
                         skipCount++;
                     } else {
-                        // Take 2 elements
                         let takeCount = 0;
                         while (takeCount < 2 && i >= 0) {
                             result.push(filesCopy[i]);
@@ -202,7 +163,6 @@ function Dashboard(): React.ReactElement {
                             takeCount++;
                             i--;
                         }
-                        // Reset skip counter
                         skipCount = 0;
                         continue;
                     }
@@ -216,15 +176,9 @@ function Dashboard(): React.ReactElement {
                     }
                 }
                 
-                console.log("Original files:", filesCopy.map(f => f.name));
-                console.log("Reordered files:", result.map(f => f.name));
-                
-                // Now rename files according to their new order
                 try {
-                    // Extract the folder name to use as prefix
                     const folderPath = files[0].path.substring(0, files[0].path.lastIndexOf('/'));
                     const folderName = folderPath.split('/').pop() || 'image';
-                    console.log(`Using folder name "${folderName}" as prefix`);
 
                     let successCount = 0;
                     let errorCount = 0;
@@ -232,30 +186,27 @@ function Dashboard(): React.ReactElement {
                     for (let i = 0; i < result.length; i++) {
                         const file = result[i];
                         const fileExt = file.name.split('.').pop() || '';
-                        // Use folder name as prefix instead of "image_"
                         const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
                         const dirPath = file.path.substring(0, file.path.lastIndexOf('/'));
                         const newPath = `${dirPath}/${newName}`;
                         
                         try {
-                            console.log(`Renaming ${file.path} to ${newPath}`);
                             await rename(file.path, newPath);
                             successCount++;
                         } catch (error) {
-                            console.error(`Error renaming file: ${error}`);
                             errorCount++;
                         }
                     }
 
-                    alert("Files reordered and renamed successfully!");
-                    console.log("Renamed files:", result.map(f => f.name));
+                    const message = errorCount > 0 
+                        ? `Operation completed with ${successCount} successful and ${errorCount} failed renames.`
+                        : "Files reordered and renamed successfully!";
+                    alert(message);
                 } catch (renameError) {
-                    console.error("Error in rename process:", renameError);
                     alert(`Error in rename process: ${renameError}`);
                 }
             }
         } catch (error) {
-            console.error("Error processing files:", error);
             alert(`Error processing files: ${error}`);
         } finally {
             setIsProcessing(false);
