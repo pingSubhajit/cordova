@@ -1,8 +1,10 @@
-# Cordova: Double-sided Scan Sorter
+# Cordova
 
 A simple desktop application that solves the problem of jumbled page orders created by double-sided document scanners.
 
 [Watch Video](https://screen.studio/share/4aRNpvQB)
+
+> ⚠️ **Maintenance Mode Notice**: This project is now in maintenance mode. While bug fixes and security updates will be provided, new feature development will be limited.
 
 ## Problem Statement
 
