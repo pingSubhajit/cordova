@@ -2,15 +2,21 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readDir, rename } from "@tauri-apps/plugin-fs";
+import { readDir, rename, exists } from "@tauri-apps/plugin-fs";
 import { listen } from "@tauri-apps/api/event";
-import {ArrowLeft, Loader2, FolderUp} from "lucide-react";
+import {ArrowLeft, Loader2, FolderUp, RotateCcw} from "lucide-react";
 
 // Define a file entry interface for our app
 interface AppFileEntry {
   name: string;
   path: string;
   size: number;
+}
+
+// Define a rename history entry interface
+interface RenameHistoryEntry {
+  originalPath: string;
+  newPath: string;
 }
 
 // Define our own DirEntry type based on the actual structure
@@ -62,19 +68,6 @@ function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
     });
 }
 
-// Helper function to handle paths cross-platform
-const extractDirectoryPath = (path: string): string => {
-    // Handle both forward slashes and backslashes (for Windows)
-    const lastForwardSlash = path.lastIndexOf('/');
-    const lastBackslash = path.lastIndexOf('\\');
-    const lastSlashIndex = Math.max(lastForwardSlash, lastBackslash);
-    
-    if (lastSlashIndex > 0) {
-        return path.substring(0, lastSlashIndex);
-    }
-    return path;
-};
-
 // Helper function to join paths in a cross-platform way
 const joinPaths = (directory: string, filename: string): string => {
     // Determine which slash type the path uses (prefer what's already in the path)
@@ -87,11 +80,18 @@ function Dashboard(): React.ReactElement {
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [isDragging, setIsDragging] = useState<boolean>(false);
 
+    // New state for undo functionality
+    const [renameHistory, setRenameHistory] = useState<RenameHistoryEntry[]>([]);
+    const [canUndo, setCanUndo] = useState<boolean>(false);
+    const [isUndoing, setIsUndoing] = useState<boolean>(false);
+
     // Set up the file drop listener
     useEffect(() => {
+        console.log("Setting up drag-drop listeners");
+        
         // Add a general event listener to track all events
         const unlistenAll = listen("tauri://event", () => {});
-
+        
         // Try multiple possible events for Tauri drag and drop
         const listeners: Promise<() => void>[] = [];
         
@@ -105,6 +105,7 @@ function Dashboard(): React.ReactElement {
         
         // Clean up the listeners when the component unmounts
         return () => {
+            console.log("Cleaning up event listeners");
             listeners.forEach(listener => listener.then((fn: () => void) => fn()));
             unlistenAll.then((fn: () => void) => fn());
         };
@@ -267,6 +268,16 @@ function Dashboard(): React.ReactElement {
     // Function to select folder using Tauri dialog
     const selectFolder = async () => {
         try {
+            // Clear undo history if there's a new operation starting
+            if (canUndo) {
+                const shouldProceed = window.confirm("Starting a new operation will clear the undo history. Do you want to proceed?");
+                if (!shouldProceed) {
+                    return;
+                }
+                setRenameHistory([]);
+                setCanUndo(false);
+            }
+
             setIsProcessing(true);
 
             const selected = await open({
@@ -342,9 +353,13 @@ function Dashboard(): React.ReactElement {
         }
         
         try {
+            // Debug file structure to see what we're working with
+            console.log("Files structure:", JSON.stringify(files.slice(0, 1)));
+            
             if (files.length > 0) {
                 // Check if files have valid paths
                 if (!files[0].path) {
+                    console.error("File path is missing in file object:", files[0]);
                     alert("File path is missing. Cannot process files.");
                     setIsProcessing(false);
                     return;
@@ -388,38 +403,62 @@ function Dashboard(): React.ReactElement {
                 }
                 
                 try {
+                    // Use manual dirname implementation if Tauri's doesn't work
+                    console.log("Getting folder path from:", files[0].path);
+                    
                     // Extract directory path manually by removing everything after the last slash
                     const filePath = files[0].path;
-                    const dirPath = extractDirectoryPath(filePath);
+                    const lastSlashIndex = filePath.lastIndexOf('/');
+                    const manualDirPath = filePath.substring(0, lastSlashIndex);
+                    console.log("Manual directory path:", manualDirPath);
                     
                     // Extract folder name manually
-                    // Use the lastIndexOf with both slash types
-                    const lastForwardSlash = dirPath.lastIndexOf('/');
-                    const lastBackslash = dirPath.lastIndexOf('\\');
-                    const lastSlashIndex = Math.max(lastForwardSlash, lastBackslash);
-                    const folderName = dirPath.substring(lastSlashIndex + 1);
+                    const manualFolderName = manualDirPath.substring(manualDirPath.lastIndexOf('/') + 1);
+                    console.log("Manual folder name:", manualFolderName);
 
                     let successCount = 0;
                     let errorCount = 0;
+                    // Temporary array to store successful rename operations
+                    const tempRenameHistory: RenameHistoryEntry[] = [];
 
                     for (let i = 0; i < result.length; i++) {
                         const file = result[i];
                         const fileExt = file.name.split('.').pop() || '';
-                        const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
+                        const newName = `${manualFolderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
                         
-                        // Extract directory path for this file
-                        const fileDir = extractDirectoryPath(file.path);
+                        // Extract directory path manually for this file
+                        const filePath = file.path;
+                        const lastSlashIndex = filePath.lastIndexOf('/');
+                        const dirPath = filePath.substring(0, lastSlashIndex);
                         
-                        // Join the paths using our cross-platform helper
-                        const newPath = joinPaths(fileDir, newName);
+                        // Use forward slash as separator
+                        const pathSeparator = '/';
+                        const newPath = `${dirPath}${pathSeparator}${newName}`;
                         
                         try {
+                            console.log(`Renaming: ${file.path} => ${newPath}`);
+                            
+                            // Store original path before renaming
+                            tempRenameHistory.push({
+                                originalPath: file.path,
+                                newPath: newPath
+                            });
+                            
                             // Use string parameters instead of an object for rename
                             await rename(file.path, newPath);
                             successCount++;
                         } catch (error) {
+                            console.error("Failed to rename:", file.path, "to", newPath, error);
                             errorCount++;
+                            // Remove the failed operation from history
+                            tempRenameHistory.pop();
                         }
+                    }
+
+                    // Only update rename history if some renames were successful
+                    if (successCount > 0) {
+                        setRenameHistory(tempRenameHistory);
+                        setCanUndo(true);
                     }
 
                     const message = errorCount > 0 
@@ -427,13 +466,83 @@ function Dashboard(): React.ReactElement {
                         : "Files reordered and renamed successfully!";
                     alert(message);
                 } catch (renameError) {
+                    console.error("Rename process error:", renameError);
                     alert(`Error in rename process: ${renameError}`);
                 }
             }
         } catch (error) {
+            console.error("File processing error:", error);
             alert(`Error processing files: ${error}`);
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    // New function to undo rename operations
+    const undoRenames = async () => {
+        if (renameHistory.length === 0) {
+            alert("Nothing to undo.");
+            return;
+        }
+
+        setIsUndoing(true);
+        let successCount = 0;
+        let errorCount = 0;
+        let notFoundCount = 0;
+
+        try {
+            // Process rename history in reverse order
+            for (let i = renameHistory.length - 1; i >= 0; i--) {
+                const { originalPath, newPath } = renameHistory[i];
+                
+                try {
+                    // Check if the new path still exists
+                    const fileExists = await exists(newPath);
+                    
+                    if (!fileExists) {
+                        console.error(`File not found: ${newPath}`);
+                        notFoundCount++;
+                        continue;
+                    }
+                    
+                    console.log(`Undoing rename: ${newPath} => ${originalPath}`);
+                    await rename(newPath, originalPath);
+                    successCount++;
+                } catch (error) {
+                    console.error("Failed to undo rename:", error);
+                    errorCount++;
+                }
+            }
+
+            let message = `Undo completed with ${successCount} successful reversions.`;
+            if (errorCount > 0 || notFoundCount > 0) {
+                message += ` ${errorCount} operations failed.`;
+                if (notFoundCount > 0) {
+                    message += ` ${notFoundCount} files were not found (may have been moved or deleted).`;
+                }
+            }
+            
+            alert(message);
+            
+            // Clear the undo history if everything was successful
+            if (errorCount === 0 && notFoundCount === 0) {
+                setRenameHistory([]);
+                setCanUndo(false);
+            } else {
+                // Remove successfully undone operations from history
+                const updatedHistory = renameHistory.filter((_, index) => {
+                    const reverseIndex = renameHistory.length - 1 - index;
+                    return reverseIndex >= successCount;
+                });
+                setRenameHistory(updatedHistory);
+                setCanUndo(updatedHistory.length > 0);
+            }
+            
+        } catch (error) {
+            console.error("Error during undo operation:", error);
+            alert(`Error undoing renames: ${error}`);
+        } finally {
+            setIsUndoing(false);
         }
     };
 
@@ -482,14 +591,14 @@ function Dashboard(): React.ReactElement {
             </AnimatePresence>
 
             <div
-                onClick={!isProcessing ? selectFolder : undefined}
+                onClick={!isProcessing && !isUndoing ? selectFolder : undefined}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className={`w-full h-full border-2 border-dashed rounded-lg p-10 cursor-pointer text-center flex items-center justify-center transition ${isDragging ? 'border-electric bg-blue-50' : 'border-gray-300'}`}
             >
                 <AnimatePresence mode="wait">
-                    {!isProcessing && <motion.div
+                    {!isProcessing && !isUndoing && <motion.div
                         key="inactive"
                         className="flex flex-col w-full h-full justify-center items-center"
                         initial={{ opacity: 0 }}
@@ -517,23 +626,57 @@ function Dashboard(): React.ReactElement {
                             initial={{ y: 10, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.3 }}
-                            disabled={isProcessing}
+                            disabled={isProcessing || isUndoing}
                         >
                             Select Folder
                         </motion.button>
                     </motion.div>}
 
-                    {isProcessing && <motion.div
+                    {(isProcessing || isUndoing) && <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="flex gap-2 w-full h-full justify-center items-center"
                     >
                         <Loader2 className="w-5 h-5 animate-spin text-neutral-950 opacity-80" />
-                        <p className="text-neutral-950 opacity-80 font-medium">Processing files...</p>
+                        <p className="text-neutral-950 opacity-80 font-medium">
+                            {isProcessing ? "Processing files..." : "Undoing changes..."}
+                        </p>
                     </motion.div>}
                 </AnimatePresence>
             </div>
+
+            {/* Show operation stats */}
+            {canUndo && !isUndoing && !isProcessing && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full flex justify-between items-center"
+                >
+                    <p className="text-sm text-neutral-950">
+                        <span className="font-medium">{renameHistory.length}</span> file(s) were renamed in the last operation.
+                    </p>
+
+                    {/* Undo button */}
+                    {canUndo && (
+                        <motion.button
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            onClick={undoRenames}
+                            disabled={isUndoing || isProcessing}
+                            className="flex items-center gap-1 px-3 py-1 text-neutral-950 bg-neutral-200 shadow-md hover:shadow-lg hover:border-none border-none transition hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isUndoing ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <RotateCcw className="w-4 h-4" />
+                            )}
+                            <span className="text-sm font-medium">Undo</span>
+                        </motion.button>
+                    )}
+                </motion.div>
+            )}
         </div>
     );
 }
