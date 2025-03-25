@@ -122,35 +122,82 @@ function Dashboard(): React.ReactElement {
             const droppedPaths = event.payload.paths || [];
             
             if (!droppedPaths || droppedPaths.length === 0) {
-                alert("No valid folders were dropped.");
+                alert("No valid files or folders were dropped.");
                 setIsProcessing(false);
                 return;
             }
             
-            // Get the first path (we only support single folder drop)
-            const path = droppedPaths[0];
-
-            // Check if path is valid
-            if (!path || typeof path !== 'string') {
-                alert("Invalid path received.");
-                setIsProcessing(false);
-                return;
+            // Analyze what was dropped: files or a folder
+            // Check if any path has a file extension
+            const hasFileExtensions = droppedPaths.some((path: string) => /\.[a-zA-Z0-9]+$/.test(path));
+            
+            if (hasFileExtensions) {
+                // Files were dropped, process only these files
+                await processDroppedFiles(droppedPaths);
+            } else {
+                // Assume a folder was dropped, process as before
+                const folderPath = droppedPaths[0];
+                
+                if (!folderPath || typeof folderPath !== 'string') {
+                    alert("Invalid folder path received.");
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                await processDroppedFolder(folderPath);
             }
-            
-            // Extract directory path
-            let folderPath = path;
-            
-            // Check if the path looks like a file rather than a directory
-            const hasFileExtension = /\.[a-zA-Z0-9]+$/.test(path);
-            if (hasFileExtension) {
-                // Extract the parent directory path using our helper function
-                folderPath = extractDirectoryPath(path);
-            }
-            
-            // Process the extracted directory path
-            processDroppedFolder(folderPath);
         } catch (error) {
-            alert(`Error processing dropped folder: ${error}`);
+            console.error("Error in drop handler:", error);
+            alert(`Error processing dropped items: ${error}`);
+            setIsProcessing(false);
+        }
+    };
+    
+    // Process dropped individual files
+    const processDroppedFiles = async (filePaths: string[]) => {
+        try {
+            // Filter for image files based on extensions
+            const imageFilePaths = filePaths.filter((path: string) => {
+                const ext = path.split('.').pop()?.toLowerCase() || '';
+                return [
+                    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+                    'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
+                    'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
+                    'jp2', 'j2k', 'psd'
+                ].includes(ext);
+            });
+
+            if (imageFilePaths.length === 0) {
+                alert("No supported image files were found among the dropped files.");
+                setIsProcessing(false);
+                return;
+            }
+
+            // Create file objects from the paths
+            const processedFiles = imageFilePaths.map((path: string) => {
+                // Extract just the filename
+                const lastSlashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+                const fileName = path.substring(lastSlashIndex + 1);
+                
+                return {
+                    name: fileName,
+                    path: path,
+                    size: 0
+                };
+            });
+            
+            console.log(`Processing ${processedFiles.length} dropped files`);
+            
+            // Sort files by name to ensure consistent ordering
+            const sortedFiles = naturalSort(processedFiles);
+
+            // Process files immediately
+            setTimeout(() => {
+                processFiles(sortedFiles);
+            }, 1000);
+        } catch (error) {
+            console.error("Error processing file drops:", error);
+            alert(`Error processing dropped files: ${error}`);
             setIsProcessing(false);
         }
     };
