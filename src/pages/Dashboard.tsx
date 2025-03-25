@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readDir, rename } from "@tauri-apps/plugin-fs";
-import { sep, dirname, basename } from '@tauri-apps/api/path';
-import {ArrowLeft, Loader2} from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import {ArrowLeft, Loader2, FolderUp} from "lucide-react";
 
 // Define a file entry interface for our app
 interface AppFileEntry {
@@ -65,7 +65,118 @@ function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
 function Dashboard(): React.ReactElement {
     const navigate = useNavigate();
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
+    const [isDragging, setIsDragging] = useState<boolean>(false);
 
+    // Set up the file drop listener
+    useEffect(() => {
+        // Add a general event listener to track all events
+        const unlistenAll = listen("tauri://event", () => {});
+
+        // Try multiple possible events for Tauri drag and drop
+        const listeners: Promise<() => void>[] = [];
+        
+        // Original event name for v2
+        listeners.push(listen("tauri://drag-drop", handleDragDropEvent));
+        
+        // Alternative event names that might be used
+        listeners.push(listen("tauri://file-drop", handleDragDropEvent));
+        listeners.push(listen("tauri://drop", handleDragDropEvent));
+        listeners.push(listen("tauri://drop-files", handleDragDropEvent));
+        
+        // Clean up the listeners when the component unmounts
+        return () => {
+            listeners.forEach(listener => listener.then((fn: () => void) => fn()));
+            unlistenAll.then((fn: () => void) => fn());
+        };
+    }, [isProcessing]);
+
+    // Handle drag drop event from Tauri
+    const handleDragDropEvent = async (event: any) => {
+        if (isProcessing) return;
+        
+        setIsDragging(false);
+        setIsProcessing(true);
+        
+        try {
+            // Extract the paths array from the payload
+            const droppedPaths = event.payload.paths || [];
+            
+            if (!droppedPaths || droppedPaths.length === 0) {
+                alert("No valid folders were dropped.");
+                setIsProcessing(false);
+                return;
+            }
+            
+            // Get the first path (we only support single folder drop)
+            const folderPath = droppedPaths[0];
+
+            // Check if path is valid
+            if (!folderPath || typeof folderPath !== 'string') {
+                alert("Invalid folder path received.");
+                setIsProcessing(false);
+                return;
+            }
+            
+            // Process the dropped folder
+            processDroppedFolder(folderPath);
+        } catch (error) {
+            alert(`Error processing dropped folder: ${error}`);
+            setIsProcessing(false);
+        }
+    };
+    
+    // Process the dropped folder
+    const processDroppedFolder = async (folderPath: string) => {
+        try {
+            // Pass string path directly as required by Tauri API
+            const entries = await readDir(folderPath);
+            
+            // Debug the structure of entries to see what properties are available
+            
+            // Filter for image files
+            const imageFiles = (entries as unknown as DirEntry[]).filter(entry => {
+                if (!entry.name) return false;
+                const ext = entry.name.split('.').pop()?.toLowerCase();
+                return [
+                    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+                    'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
+                    'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
+                    'jp2', 'j2k', 'psd'
+                ].includes(ext || '');
+            });
+
+            if (imageFiles.length === 0) {
+                alert("No supported image files found in the dropped folder.");
+                setIsProcessing(false);
+                return;
+            }
+            
+            // Create file objects with properly constructed paths
+            const processedFiles = imageFiles.map(entry => {
+                // Construct full path by joining folder path and filename
+                const fullPath = `${folderPath}/${entry.name}`;
+                
+                return {
+                    name: entry.name || "unknown",
+                    path: fullPath,  // Use the constructed full path
+                    size: 0
+                };
+            });
+            
+            // Sort files by name to ensure consistent ordering
+            const sortedFiles = naturalSort(processedFiles);
+
+            // Process files immediately after selection
+            setTimeout(() => {
+                processFiles(sortedFiles);
+            }, 1000);
+            
+        } catch (fsError) {
+            alert(`Error reading directory: ${fsError}`);
+            setIsProcessing(false);
+        }
+    };
+    
     // Function to select folder using Tauri dialog
     const selectFolder = async () => {
         try {
@@ -85,6 +196,7 @@ function Dashboard(): React.ReactElement {
             const folderPath = selected as string;
             
             try {
+                // Use string path directly as required by Tauri API
                 const entries = await readDir(folderPath);
                 
                 // Filter for image files
@@ -105,12 +217,16 @@ function Dashboard(): React.ReactElement {
                     return;
                 }
                 
-                // Create file objects with name and path
-                const processedFiles = imageFiles.map(entry => ({
-                    name: entry.name || "unknown",
-                    path: `${folderPath}/${entry.name}`,
-                    size: 0
-                }));
+                // Create file objects with properly constructed paths
+                const processedFiles = imageFiles.map(entry => {
+                    // Construct full path by joining folder path and filename
+                    const fullPath = `${folderPath}/${entry.name}`;
+                    return {
+                        name: entry.name || "unknown",
+                        path: fullPath,  // Use the constructed full path
+                        size: 0
+                    };
+                });
                 
                 // Sort files by name to ensure consistent ordering
                 const sortedFiles = naturalSort(processedFiles);
@@ -140,6 +256,13 @@ function Dashboard(): React.ReactElement {
         
         try {
             if (files.length > 0) {
+                // Check if files have valid paths
+                if (!files[0].path) {
+                    alert("File path is missing. Cannot process files.");
+                    setIsProcessing(false);
+                    return;
+                }
+                
                 const filesCopy = [...files];
                 const result = [];
 
@@ -178,9 +301,13 @@ function Dashboard(): React.ReactElement {
                 }
                 
                 try {
-                    // Use platform-agnostic path handling
-                    const folderPath = await dirname(files[0].path);
-                    const folderName = await basename(folderPath);
+                    // Extract directory path manually by removing everything after the last slash
+                    const filePath = files[0].path;
+                    const lastSlashIndex = filePath.lastIndexOf('/');
+                    const manualDirPath = filePath.substring(0, lastSlashIndex);
+                    
+                    // Extract folder name manually
+                    const manualFolderName = manualDirPath.substring(manualDirPath.lastIndexOf('/') + 1);
 
                     let successCount = 0;
                     let errorCount = 0;
@@ -188,12 +315,19 @@ function Dashboard(): React.ReactElement {
                     for (let i = 0; i < result.length; i++) {
                         const file = result[i];
                         const fileExt = file.name.split('.').pop() || '';
-                        const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
-                        const dirPath = await dirname(file.path);
-                        const pathSeparator = await sep();
+                        const newName = `${manualFolderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
+                        
+                        // Extract directory path manually for this file
+                        const filePath = file.path;
+                        const lastSlashIndex = filePath.lastIndexOf('/');
+                        const dirPath = filePath.substring(0, lastSlashIndex);
+                        
+                        // Use forward slash as separator
+                        const pathSeparator = '/';
                         const newPath = `${dirPath}${pathSeparator}${newName}`;
                         
                         try {
+                            // Use string parameters instead of an object for rename
                             await rename(file.path, newPath);
                             successCount++;
                         } catch (error) {
@@ -214,6 +348,26 @@ function Dashboard(): React.ReactElement {
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    // Handle drag events for visual feedback only
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isDragging) setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        // The actual file processing is handled by the Tauri event listener
     };
 
     return (
@@ -241,8 +395,11 @@ function Dashboard(): React.ReactElement {
             </AnimatePresence>
 
             <div
-                onClick={selectFolder}
-                className="w-full h-full border-2 border-dashed rounded-lg p-10 cursor-pointer text-center flex items-center justify-center transition"
+                onClick={!isProcessing ? selectFolder : undefined}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`w-full h-full border-2 border-dashed rounded-lg p-10 cursor-pointer text-center flex items-center justify-center transition ${isDragging ? 'border-electric bg-blue-50' : 'border-gray-300'}`}
             >
                 <AnimatePresence mode="wait">
                     {!isProcessing && <motion.div
@@ -252,13 +409,21 @@ function Dashboard(): React.ReactElement {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                     >
-                        <motion.p
-                            className="text-neutral-950 opacity-80 font-medium mb-2"
+                        <motion.div
+                            className="mb-4"
                             initial={{ y: 10, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.1 }}
                         >
-                            Select a folder with image files
+                            <FolderUp className="w-12 h-12 text-neutral-400 mx-auto mb-2" />
+                        </motion.div>
+                        <motion.p
+                            className="text-neutral-950 opacity-80 font-medium mb-2"
+                            initial={{ y: 10, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.2 }}
+                        >
+                            {isDragging ? "Drop folder here" : "Drag & drop a folder or click to browse"}
                         </motion.p>
                         <motion.button
                             className="bg-electric text-white font-medium py-1.5 px-3 text-sm rounded-md hover:bg-electric/90 transition-colors hover:scale-110"
