@@ -148,26 +148,74 @@ function Dashboard(): React.ReactElement {
             const droppedPaths = event.payload.paths || [];
             
             if (!droppedPaths || droppedPaths.length === 0) {
-                alert("No valid folders were dropped.");
+                alert("No valid items were dropped.");
                 setIsProcessing(false);
                 return;
             }
             
-            // Get the first path (we only support single folder drop)
-            const folderPath = droppedPaths[0];
+            // Check if multiple files were dropped vs. a single folder
+            const hasMultipleItems = droppedPaths.length > 1;
+            const firstItemHasExtension = /\.\w+$/.test(droppedPaths[0]);
             
-            // Check if path is valid
-            if (!folderPath || typeof folderPath !== 'string') {
-                alert("Invalid folder path received.");
-                setIsProcessing(false);
-                return;
+            // Determine if we're processing specific files or a folder
+            if (hasMultipleItems || firstItemHasExtension) {
+                // Files were dropped - process only these specific files
+                processDroppedFiles(droppedPaths);
+            } else {
+                // Folder was dropped - process the whole folder
+                processDroppedFolder(droppedPaths[0]);
             }
-            
-            // Process the dropped folder
-            processDroppedFolder(folderPath);
         } catch (error) {
             console.error("Error in handleDragDropEvent:", error);
-            alert(`Error processing dropped folder: ${error}`);
+            alert(`Error processing dropped items: ${error}`);
+            setIsProcessing(false);
+        }
+    };
+    
+    // Process specific dropped files rather than scanning a directory
+    const processDroppedFiles = async (filePaths: string[]) => {
+        try {
+            // Filter for image files based on extensions
+            const imageFilePaths = filePaths.filter(path => {
+                const ext = path.split('.').pop()?.toLowerCase() || '';
+                return [
+                    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+                    'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
+                    'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
+                    'jp2', 'j2k', 'psd'
+                ].includes(ext);
+            });
+            
+            if (imageFilePaths.length === 0) {
+                alert("No supported image files were found among the dropped files.");
+                setIsProcessing(false);
+                return;
+            }
+            
+            // Create file objects directly from the paths
+            const processedFiles = imageFilePaths.map(path => {
+                // Extract just the filename using our cross-platform helper
+                const fileName = path.substring(getLastSeparatorIndex(path) + 1);
+                
+                return {
+                    name: fileName,
+                    path: path,
+                    size: 0
+                };
+            });
+            
+            console.log(`Processing ${processedFiles.length} specific dropped files`);
+            
+            // Sort files by name to ensure consistent ordering
+            const sortedFiles = naturalSort(processedFiles);
+            
+            // Process files immediately
+            setTimeout(() => {
+                processFiles(sortedFiles);
+            }, 1000);
+        } catch (error) {
+            console.error("Error processing file drops:", error);
+            alert(`Error processing dropped files: ${error}`);
             setIsProcessing(false);
         }
     };
@@ -211,6 +259,8 @@ function Dashboard(): React.ReactElement {
                 
                 // Sort files by name to ensure consistent ordering
                 const sortedFiles = naturalSort(processedFiles);
+                
+                console.log(`Processing all ${sortedFiles.length} image files in folder`);
 
                 // Process files immediately after selection
                 setTimeout(() => {
@@ -218,52 +268,12 @@ function Dashboard(): React.ReactElement {
                 }, 1000);
             } catch (dirError) {
                 // If reading as directory fails, the path might be a file
-                // Extract the directory path and try again
-                // Check if the path has a file extension
+                // Process just this single file
                 const hasFileExtension = /\.\w+$/.test(folderPath);
                 
                 if (hasFileExtension) {
-                    // It's a file, get its directory
-                    const dirPath = extractDirectoryPath(folderPath);
-                    
-                    // Now try to read the directory
-                    const entries = await readDir(dirPath);
-                    
-                    // Filter for image files
-                    const imageFiles = (entries as unknown as DirEntry[]).filter(entry => {
-                        if (!entry.name) return false;
-                        const ext = entry.name.split('.').pop()?.toLowerCase();
-                        return [
-                            'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
-                            'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
-                            'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
-                            'jp2', 'j2k', 'psd'
-                        ].includes(ext || '');
-                    });
-                    
-                    if (imageFiles.length === 0) {
-                        alert("No supported image files found in the parent directory.");
-                        setIsProcessing(false);
-                        return;
-                    }
-                    
-                    // Create file objects with properly constructed paths
-                    const processedFiles = imageFiles.map(entry => {
-                        const fullPath = joinPaths(dirPath, entry.name || "");
-                        return {
-                            name: entry.name || "unknown",
-                            path: fullPath,
-                            size: 0
-                        };
-                    });
-                    
-                    // Sort files by name to ensure consistent ordering
-                    const sortedFiles = naturalSort(processedFiles);
-                    
-                    // Process files
-                    setTimeout(() => {
-                        processFiles(sortedFiles);
-                    }, 1000);
+                    // It's a single file, process only this file
+                    processDroppedFiles([folderPath]);
                 } else {
                     // Not a file and not a readable directory
                     console.error("Error reading directory:", dirError);
@@ -277,7 +287,7 @@ function Dashboard(): React.ReactElement {
             setIsProcessing(false);
         }
     };
-    
+
     // Function to select folder using Tauri dialog
     const selectFolder = async () => {
         try {
