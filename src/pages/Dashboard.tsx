@@ -62,6 +62,26 @@ function naturalSort(arr: AppFileEntry[]): AppFileEntry[] {
     });
 }
 
+// Helper function to handle paths cross-platform
+const extractDirectoryPath = (path: string): string => {
+    // Handle both forward slashes and backslashes (for Windows)
+    const lastForwardSlash = path.lastIndexOf('/');
+    const lastBackslash = path.lastIndexOf('\\');
+    const lastSlashIndex = Math.max(lastForwardSlash, lastBackslash);
+    
+    if (lastSlashIndex > 0) {
+        return path.substring(0, lastSlashIndex);
+    }
+    return path;
+};
+
+// Helper function to join paths in a cross-platform way
+const joinPaths = (directory: string, filename: string): string => {
+    // Determine which slash type the path uses (prefer what's already in the path)
+    const separator = directory.includes('\\') ? '\\' : '/';
+    return `${directory}${separator}${filename}`;
+};
+
 function Dashboard(): React.ReactElement {
     const navigate = useNavigate();
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -108,16 +128,26 @@ function Dashboard(): React.ReactElement {
             }
             
             // Get the first path (we only support single folder drop)
-            const folderPath = droppedPaths[0];
+            const path = droppedPaths[0];
 
             // Check if path is valid
-            if (!folderPath || typeof folderPath !== 'string') {
-                alert("Invalid folder path received.");
+            if (!path || typeof path !== 'string') {
+                alert("Invalid path received.");
                 setIsProcessing(false);
                 return;
             }
             
-            // Process the dropped folder
+            // Extract directory path
+            let folderPath = path;
+            
+            // Check if the path looks like a file rather than a directory
+            const hasFileExtension = /\.[a-zA-Z0-9]+$/.test(path);
+            if (hasFileExtension) {
+                // Extract the parent directory path using our helper function
+                folderPath = extractDirectoryPath(path);
+            }
+            
+            // Process the extracted directory path
             processDroppedFolder(folderPath);
         } catch (error) {
             alert(`Error processing dropped folder: ${error}`);
@@ -128,51 +158,61 @@ function Dashboard(): React.ReactElement {
     // Process the dropped folder
     const processDroppedFolder = async (folderPath: string) => {
         try {
-            // Pass string path directly as required by Tauri API
-            const entries = await readDir(folderPath);
-            
-            // Debug the structure of entries to see what properties are available
-            
-            // Filter for image files
-            const imageFiles = (entries as unknown as DirEntry[]).filter(entry => {
-                if (!entry.name) return false;
-                const ext = entry.name.split('.').pop()?.toLowerCase();
-                return [
-                    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
-                    'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
-                    'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
-                    'jp2', 'j2k', 'psd'
-                ].includes(ext || '');
-            });
-
-            if (imageFiles.length === 0) {
-                alert("No supported image files found in the dropped folder.");
-                setIsProcessing(false);
-                return;
-            }
-            
-            // Create file objects with properly constructed paths
-            const processedFiles = imageFiles.map(entry => {
-                // Construct full path by joining folder path and filename
-                const fullPath = `${folderPath}/${entry.name}`;
+            // First, check if the path exists and is a directory before attempting to read
+            try {
+                // Pass string path directly as required by Tauri API
+                const entries = await readDir(folderPath);
                 
-                return {
-                    name: entry.name || "unknown",
-                    path: fullPath,  // Use the constructed full path
-                    size: 0
-                };
-            });
-            
-            // Sort files by name to ensure consistent ordering
-            const sortedFiles = naturalSort(processedFiles);
+                // Filter for image files
+                const imageFiles = (entries as unknown as DirEntry[]).filter(entry => {
+                    if (!entry.name) return false;
+                    const ext = entry.name.split('.').pop()?.toLowerCase();
+                    return [
+                        'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+                        'tif', 'tiff', 'svg', 'heif', 'heic', 'raw',
+                        'cr2', 'nef', 'arw', 'dng', 'avif', 'jxr',
+                        'jp2', 'j2k', 'psd'
+                    ].includes(ext || '');
+                });
 
-            // Process files immediately after selection
-            setTimeout(() => {
-                processFiles(sortedFiles);
-            }, 1000);
-            
+                if (imageFiles.length === 0) {
+                    alert("No supported image files found in the folder.");
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                // Create file objects with properly constructed paths
+                const processedFiles = imageFiles.map(entry => {
+                    // Construct full path by joining folder path and filename
+                    const fullPath = joinPaths(folderPath, entry.name);
+                    
+                    return {
+                        name: entry.name || "unknown",
+                        path: fullPath,  // Use the constructed full path
+                        size: 0
+                    };
+                });
+                
+                // Sort files by name to ensure consistent ordering
+                const sortedFiles = naturalSort(processedFiles);
+
+                // Process files immediately after selection
+                setTimeout(() => {
+                    processFiles(sortedFiles);
+                }, 1000);
+                
+            } catch (dirError) {
+                // Check if the error contains a specific message about not being a directory
+                const errorMessage = String(dirError);
+                if (errorMessage.includes("Not a directory")) {
+                    alert("Please drop a folder, not a file. If you dropped a file, try dropping its parent folder instead.");
+                } else {
+                    alert(`Error reading directory: ${dirError}`);
+                }
+                setIsProcessing(false);
+            }
         } catch (fsError) {
-            alert(`Error reading directory: ${fsError}`);
+            alert(`Error processing folder: ${fsError}`);
             setIsProcessing(false);
         }
     };
@@ -220,7 +260,7 @@ function Dashboard(): React.ReactElement {
                 // Create file objects with properly constructed paths
                 const processedFiles = imageFiles.map(entry => {
                     // Construct full path by joining folder path and filename
-                    const fullPath = `${folderPath}/${entry.name}`;
+                    const fullPath = joinPaths(folderPath, entry.name);
                     return {
                         name: entry.name || "unknown",
                         path: fullPath,  // Use the constructed full path
@@ -303,11 +343,14 @@ function Dashboard(): React.ReactElement {
                 try {
                     // Extract directory path manually by removing everything after the last slash
                     const filePath = files[0].path;
-                    const lastSlashIndex = filePath.lastIndexOf('/');
-                    const manualDirPath = filePath.substring(0, lastSlashIndex);
+                    const dirPath = extractDirectoryPath(filePath);
                     
                     // Extract folder name manually
-                    const manualFolderName = manualDirPath.substring(manualDirPath.lastIndexOf('/') + 1);
+                    // Use the lastIndexOf with both slash types
+                    const lastForwardSlash = dirPath.lastIndexOf('/');
+                    const lastBackslash = dirPath.lastIndexOf('\\');
+                    const lastSlashIndex = Math.max(lastForwardSlash, lastBackslash);
+                    const folderName = dirPath.substring(lastSlashIndex + 1);
 
                     let successCount = 0;
                     let errorCount = 0;
@@ -315,16 +358,13 @@ function Dashboard(): React.ReactElement {
                     for (let i = 0; i < result.length; i++) {
                         const file = result[i];
                         const fileExt = file.name.split('.').pop() || '';
-                        const newName = `${manualFolderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
+                        const newName = `${folderName}_${String(i + 1).padStart(3, '0')}.${fileExt}`;
                         
-                        // Extract directory path manually for this file
-                        const filePath = file.path;
-                        const lastSlashIndex = filePath.lastIndexOf('/');
-                        const dirPath = filePath.substring(0, lastSlashIndex);
+                        // Extract directory path for this file
+                        const fileDir = extractDirectoryPath(file.path);
                         
-                        // Use forward slash as separator
-                        const pathSeparator = '/';
-                        const newPath = `${dirPath}${pathSeparator}${newName}`;
+                        // Join the paths using our cross-platform helper
+                        const newPath = joinPaths(fileDir, newName);
                         
                         try {
                             // Use string parameters instead of an object for rename
